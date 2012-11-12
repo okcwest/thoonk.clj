@@ -114,15 +114,15 @@
       (doseq [[key value] config]
         (redis/hset (str "feed.config:" name) key value)))
     (if new
-      (publish "newfeed" [name uuid]))
-    (publish "conffeed" [name uuid]))))
-      
+      (with-redis (publish "newfeed" [name uuid])))
+    (with-redis (publish "conffeed" [name uuid])))))
+
 (defn get-feed
   "Retrieves a feed instance from memory or constructs an instance if not cached"
   [name]
   (or (get @feeds name)
       (with-redis
-        (let [feedtype (redis/hget (str "feed.config:" name) "type")
+        (let [feedtype (redis/hget (str "feed.config:" name) :type)
               feed-constructor (@feedtypes feedtype)]
           (if (not feedtype)
             (throw (FeedDoesNotExist.)))
@@ -148,7 +148,7 @@
       (with-redis-transaction ;; inside transaction
         (redis/srem "feeds" name)
         (doseq [schema (get-schemas feed-instance)]
-          (redis/delete schema))
+          (redis/del schema))
         (publish "delfeed" [name uuid])))))
 
 (defn register-feedtype

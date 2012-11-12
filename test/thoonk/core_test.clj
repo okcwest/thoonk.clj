@@ -1,7 +1,9 @@
 (ns thoonk.core-test
   (:use clojure.test
-        thoonk.core))
+        thoonk.core)
+  (:require [taoensso.carmine :as redis]))
 
-(deftest a-test
-  (testing "FIXME, I fail."
-    (is (= 0 1))))
+(deftest test-env-test
+  (testing "Checks if Redis is configured correctly for subsequent tests."
+    (is (not (nil? (with-redis (redis/info)))))))
+                      
