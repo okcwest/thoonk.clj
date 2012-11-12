@@ -1,6 +1,6 @@
 (ns thoonk.feeds.queue
     (:require [taoensso.carmine :as redis])
-    (:import (java.util UUID)))
+    (:use [thoonk.core]))
 
 ; a specific protocol for the queue feed type
 (defprotocol QueueP
@@ -42,9 +42,8 @@
         (publish [this item priority]
             (put this item priority))
         (put [this item priority]
-            (let [id (java.util.UUID/randomUUID)]
-                (wredis 
-                    (redis/multi)
+            (let [id (make-uuid)]
+                (with-redis-transaction 
                     (if priority
                         (do
                             (redis/rpush (:feed-ids (:feed this)) id)
@@ -53,22 +52,19 @@
                         (do
                             (redis/rpush (:feed-ids (:feed this)) id)
                             (redis/hset (:feed-items (:feed this)) id item)
-                            (redis/incr (:feed-publishes (:feed this)))))
-                    (redis/exec))))
+                            (redis/incr (:feed-publishes (:feed this))))))))
         (put [this item]
             (put this item false))
         (get [this timeout]
-            (let [result (wredis (redis/brpop (:feed-ids (:feed this)) timeout))]
+            (let [result (with-redis (redis/brpop (:feed-ids (:feed this)) timeout))]
                 (if (nil? result)
                     nil
                     (first
                         (let [id (nth 2 result)]
-                            (wredis
-                                (redis/multi)
+                            (with-redis-transaction
                                 (redis/hget (:feed-items (:feed this)) id)
-                                (redis/hdel (:feed-items (:feed this)) id)
-                                (redis/exec)))))))
+                                (redis/hdel (:feed-items (:feed this)) id)))))))
         (get [this]
             (get this 0))
         (get-ids [this]
-            (wredis (redis/lrange (:feed-ids (:feed this)) 0 -1))))
+            (with-redis (redis/lrange (:feed-ids (:feed this)) 0 -1))))
