@@ -1,6 +1,6 @@
 (ns thoonk.core
   (:require [taoensso.carmine :as redis])
-  (:use [clojure.string :only [join split]])
+  (:use [clojure.string :only [join split]] [thoonk.feeds.feed :only [get-schemas]])
   (:import (thoonk.exceptions FeedExists
                               FeedDoesNotExist
                               Empty
