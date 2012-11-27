@@ -1,6 +1,9 @@
 (ns thoonk.core
-  (:require [taoensso.carmine :as redis])
-  (:use [clojure.string :only [join split]] [thoonk.redis-base] [thoonk.feeds.feed])
+  (:require [taoensso.carmine :as redis]
+            [thoonk.util :as util])
+  (:use [clojure.string :only [join split]] 
+        [thoonk.redis-base]
+        [thoonk.feeds.feed])
   (:import (thoonk.exceptions FeedExists
                               FeedDoesNotExist
                               Empty
@@ -37,9 +40,6 @@
 (declare initialize) ; registers the feed types. forward-declared for sanity.
 
 ;; UUID identifying this Thoonk JVM instance
-(defn make-uuid
-  []
-  (str (java.util.UUID/randomUUID)))
 (def uuid (str (java.util.UUID/randomUUID)))
 
 (defmacro with-thoonk
@@ -98,13 +98,6 @@
   [listener name]
   (swap! (listener :handlers) dissoc name))
 
-(defn publish-items
-  "Utility function to publish messages separated by null bytes.
-   Second form allows supply a a separate pipeline to use for
-   Redis communication"
-  [key items]
-  (redis/publish key (join "\00" items)))
-
 (defn feed-exists
   [name]
   (= 1 (with-redis
@@ -124,8 +117,8 @@
       (if (nil? (:type config))
         (redis/hset (str "feed.config:" name) :type :feed)))
     (if new
-      (with-redis (publish-items "newfeed" [name uuid])))
-    (with-redis (publish-items "conffeed" [name uuid]))))
+      (with-redis (util/publish "newfeed" [name uuid])))
+    (with-redis (util/publish "conffeed" [name uuid]))))
 
 (defn get-feed
   "Retrieves a feed instance from memory or constructs an instance if not cached"
@@ -161,7 +154,7 @@
       (redis/srem "feeds" name)
       (doseq [schema schemas] ; schemas never used won't exist and that's fine
         (redis/del schema))
-      (publish-items "delfeed" [name uuid]))
+      (util/publish "delfeed" [name uuid]))
       ; remove the deleted feed from the cache
       (swap! feeds dissoc name))
     ; if successful, getting the feed by name should break.

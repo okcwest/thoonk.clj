@@ -1,63 +1,64 @@
 (ns thoonk.feeds.feed
   (:use [thoonk.redis-base])
-  (:require [taoensso.carmine :as redis]))
+  (:require [taoensso.carmine :as redis]
+            [thoonk.util :as util]))
 
 (defprotocol FeedP
-    (get-channels [this])
-    ;(delete-feed [this]) ;this must be done centrally.
-    (get-schemas [this])
-    (get-ids [this])
-    (get-item [this] [this id])
-    (get-all [this]))
-    ;(publish [this item] [this item args])
-    ;(retract [this id]))
+  (get-channels [this])
+  ;(delete-feed [this]) ; this is always done centrally.
+  (get-schemas [this])
+  (get-ids [this])
+  (get-item [this] [this id])
+  (get-all [this])
+  (publish [this item] [this item args])
+  (retract [this id]))
 
-(defrecord Feed [name feed-ids feed-items feed-publish
-               feed-publishes feed-retract feed-config
-              feed-edit]
+(defrecord Feed [ name feed-ids feed-items feed-publish
+                  feed-publishes feed-retract feed-config
+                  feed-edit]
   FeedP
-      ; thoonk api
-      (get-channels [this]
-          [(:feed-publish this) (:feed-retract this) (:feed-edit this)])
-      (get-schemas [this]
-        #{(:feed-ids this) (:feed-items this) (:feed-publish this) 
-            (:feed-publishes this) (:feed-retract this) (:feed-config this)
-            (:feed-edit this)})
-      ;(delete-feed [this]
-          ; python client does this via the thoonk utility
-          ;(thoonk/delete (:feed-ids this)))
-      ; standard api
-      (get-ids [this]
-          (with-redis (redis/zrange (:feed-ids this) 0 -1)))
-      (get-item [this]
-          (get-item this (with-redis (redis/lindex (:feed-ids this) 0))))
-      (get-item [this id]
-          (with-redis (redis/hget (:feed-items this) id)))
-      (get-all [this]
-          (with-redis (redis/hgetall (:feed-items this)))))
-      ;(publish [this item args] ; DOES NOT notify thoonk central. this must be called by thoonk.
-      ;    (let [  id (:id args)
-      ;            maxlen (hget pipe (:feed-config this) "max-length") 
-      ;            delete-ids (if (or (nil? maxlen) (equal? 0 maxlen)) 
-      ;                [] ; no stale items
-      ;                (with-redis (redis/zrange (:feed-ids this) 0 (- max 0))))]
-      ;            (with-redis-transaction
-      ;                (doseq [delete-id] delete-ids
-      ;                    (if (not (equal? delete-id id)) ; retract any stale items that were there
-      ;                        (redis/zrem (:feed-ids this) delete-id)
-      ;                        (redis/hget (:feed-items this) delete-id)
-      ;                        (thoonk/publish (:feed-retract this) delete-id)))
-      ;                (redis/zadd (:feed-ids this) $TIME$) ; time-order the item's id
-      ;                (redis/incr (:feed-publishes this)) ; bump the counter
-      ;                (redis/hset (:feed-items this) id item)))) ; push the actual item
-      ;(publish [this item] ; if no id, make a uuid
-      ;    (publish this (make-uuid)))
-      ;(retract [this id]
-      ;    (if (not (nil? (with-redis redis/zrank (:feed-ids this) id)))
-      ;        (with-redis-transaction 
-      ;            (redis/zrem (:feed-ids this) id)
-      ;            (redis/hdel (:feed-items this) id)
-      ;            (thoonk/publish (:feed-retract this) id)))))
+    ; thoonk api
+    (get-channels [this]
+      [(:feed-publish this) (:feed-retract this) (:feed-edit this)])
+    (get-schemas [this]
+      #{(:feed-ids this) (:feed-items this) (:feed-publish this) 
+        (:feed-publishes this) (:feed-retract this) (:feed-config this)
+        (:feed-edit this)})
+    ; standard api
+    (get-ids [this]
+      (with-redis (redis/zrange (:feed-ids this) 0 -1)))
+    (get-item [this]
+      (get-item this (with-redis (redis/lindex (:feed-ids this) 0))))
+    (get-item [this id]
+      (with-redis (redis/hget (:feed-items this) id)))
+    (get-all [this]
+      (with-redis (redis/hgetall (:feed-items this))))
+    (publish
+      [this item] ; if no id, make a uuid
+        (publish this item {:id (util/make-uuid)}))
+    (publish
+      [this item args] ; DOES NOT notify thoonk central. this must be called by thoonk.
+        (let [  id (:id args)
+                maxlen (with-redis (redis/hget (:feed-config this) "max-length")) 
+                delete-ids (if (or (nil? maxlen) (= 0 maxlen)) 
+                    [] ; no stale items
+                    (with-redis (redis/zrange (:feed-ids this) 0 (- max 0))))]
+          (with-redis-transaction
+            (doseq [delete-id delete-ids]
+              (if (not (= delete-id id)) ; retract any stale items that were there
+                (do
+                  (redis/zrem (:feed-ids this) delete-id)
+                  (redis/hget (:feed-items this) delete-id)
+                  (util/publish (:feed-retract this) delete-id))))
+              (redis/zadd (:feed-ids this) (.getTime (java.util.Date.))) ; time-order the item's id
+              (redis/incr (:feed-publishes this)) ; bump the counter
+              (redis/hset (:feed-items this) id item)))) ; push the actual item
+    (retract [this id]
+      (if (not (nil? (with-redis redis/zrank (:feed-ids this) id)))
+        (with-redis-transaction 
+          (redis/zrem (:feed-ids this) id)
+          (redis/hdel (:feed-items this) id)
+          (util/publish (:feed-retract this) id)))))
 
 (defn ^Feed make-feed
   [name]
