@@ -43,7 +43,7 @@
             (put this item priority))
         (put [this item priority]
             (let [id (make-uuid)]
-                (with-redis-transaction 
+                (with-redis-transaction
                     (if priority
                         (do
                             (redis/rpush (:feed-ids (:feed this)) id)

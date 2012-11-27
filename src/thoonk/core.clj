@@ -1,20 +1,40 @@
 (ns thoonk.core
   (:require [taoensso.carmine :as redis])
-  (:use [clojure.string :only [join split]] [thoonk.feeds.feed :only [get-schemas]])
+  (:use [clojure.string :only [join split]] [thoonk.redis-base] [thoonk.feeds.feed])
   (:import (thoonk.exceptions FeedExists
                               FeedDoesNotExist
                               Empty
                               NotListening)))
-
-;; Default redis connection bindings
-(def ^:dynamic *redis-pool* (redis/make-conn-pool))
-(def ^:dynamic *redis-conn* (redis/make-conn-spec))
 
 ;; Feed constructors
 (def feedtypes (atom {}))
 
 ;; Cached feed instances
 (def feeds (atom {}))
+
+;(def base-schemas #{"feed.ids:" "feed.items:" "feed.publish:" "feed.publishes:" 
+;  "feed.retract:" "feed.config:" "feed.edit:"})
+
+;; we hold the set of schemas centrally, because it can't be pulled from the feed types
+;(def feedtype-schemas (atom {
+;    :feed base-schemas
+;    :queue base-schemas
+;    :sorted_feed (conj base-schemas #{"feed.incr_id:"})
+;    :job (conj base-schemas #{"feed.claimed" "feed.stalled" "feed.running"
+;      "feed.publishes" "feed.cancelled"})}))
+
+;(defn get-schemas
+;  "Fetches all the schemas for a feed by name"
+;  [name]
+;  (let [feedtype (get @feeds name)]
+;    (if (nil? feedtype)
+;      (throw (FeedDoesNotExist.)))
+;    (loop [schemas #{} prefixes (get @feedtype-schemas feedtype)]
+;      (if (or (nil? prefixes) (= 0(count prefixes)))
+;        schemas
+;        (recur (conj schemas (str (first prefixes))) (rest prefixes))))))
+
+(declare initialize) ; registers the feed types. forward-declared for sanity.
 
 ;; UUID identifying this Thoonk JVM instance
 (defn make-uuid
@@ -29,18 +49,6 @@
   (binding [*redis-pool* (or redis-pool *redis-pool*)
             *redis-conn* (or redis-conn *redis-conn*)]
     ~@body))
-
-(defmacro with-redis
-  "Utility macro for in namespace redis use"
-  [& body]
-  `(redis/with-conn *redis-pool* *redis-conn* ~@body))
-
-(defmacro with-redis-transaction
-  [& body]
-  `(redis/with-conn *redis-pool* *redis-conn*
-     (redis/multi)
-     ~@body
-     (redis/exec)))
 
 (defn create-listener
   "Defines and initializes a Thoonk listener instance for realtime feeds"
@@ -90,7 +98,7 @@
   [listener name]
   (swap! (listener :handlers) dissoc name))
 
-(defn- publish
+(defn publish-items
   "Utility function to publish messages separated by null bytes.
    Second form allows supply a a separate pipeline to use for
    Redis communication"
@@ -99,43 +107,47 @@
 
 (defn feed-exists
   [name]
-  (with-redis
-    (redis/sismember "feeds" name)))
+  (= 1 (with-redis
+    (redis/sismember "feeds" name))))
 
 (defn set-config
   "Sets the configuration values for a given feed"
   ([name config]
-  (set-config name config false))
+    (set-config name config false))
   ([name config new]
-  (if (not (feed-exists name))
-    (throw (FeedDoesNotExist.)))
-  (let [feedtype (or (:type config) :feed)]
+    (if (not (feed-exists name))
+      (throw (FeedDoesNotExist.)))
     (with-redis
       (doseq [[key value] config]
-        (redis/hset (str "feed.config:" name) key value)))
+        (redis/hset (str "feed.config:" name) key value))
+      ; type must have a value, so default it to :feed
+      (if (nil? (:type config))
+        (redis/hset (str "feed.config:" name) :type :feed)))
     (if new
-      (with-redis (publish "newfeed" [name uuid])))
-    (with-redis (publish "conffeed" [name uuid])))))
+      (with-redis (publish-items "newfeed" [name uuid])))
+    (with-redis (publish-items "conffeed" [name uuid]))))
 
 (defn get-feed
   "Retrieves a feed instance from memory or constructs an instance if not cached"
   [name]
-  (or (get @feeds name)
-      (with-redis
-        (let [feedtype (redis/hget (str "feed.config:" name) :type)
-              feed-constructor (@feedtypes feedtype)]
-          (if (not feedtype)
-            (throw (FeedDoesNotExist.)))
-          (swap! feeds assoc name (feed-constructor name))))))
+  (or (get @feeds name) ; try the cache first
+    (let [feedtype (or ; what kind of feed should be constructed?
+            (with-redis (redis/hget (str "feed.config:" name) :type)) 
+            (throw (FeedDoesNotExist.))) ; die nicely if it isn't there.
+          initialized (initialize) ; do this here before we try to get a c'tor
+          feed-constructor (feedtype @feedtypes)]
+      (if (not feed-constructor) ; unknown feed type? be cool.
+          (throw (FeedDoesNotExist.))
+          ; call the type-specific wrapper function that will create the type
+          (get (swap! feeds assoc name (feed-constructor name feedtype)) name)))))
 
 (defn create-feed
-  "Creates keys for a new feed structure"
+  "Creates main key for a new feed structure."
   [name config]
-  (with-redis
-    (let [created (not (redis/sadd "feeds" name))]
+    (let [created (= 1 (with-redis (redis/sadd "feeds" name)))]
       (if created
         (set-config name config true))
-      created)))
+      created))
 
 (defn delete-feed
   "Deletes a feed's keys"
@@ -143,18 +155,36 @@
   (with-redis
     (if (not (redis/sismember "feeds" name))
       (throw (FeedDoesNotExist.))))
-  (with-redis ;; outside transaction
-    (let [feed-instance (get-feed name)]
-      (with-redis-transaction ;; inside transaction
-        (redis/srem "feeds" name)
-        (doseq [schema (get-schemas feed-instance)]
-          (redis/del schema))
-        (publish "delfeed" [name uuid])))))
+  (let [feed-instance (get-feed name)
+        schemas (get-schemas feed-instance)]
+    (with-redis-transaction ;; inside transaction
+      (redis/srem "feeds" name)
+      (doseq [schema schemas] ; schemas never used won't exist and that's fine
+        (redis/del schema))
+      (publish-items "delfeed" [name uuid]))
+      ; remove the deleted feed from the cache
+      (swap! feeds dissoc name))
+    ; if successful, getting the feed by name should break.
+    (let [deleted-feed (try (get-feed name)
+                          (catch FeedDoesNotExist f nil))]
+      (nil? deleted-feed)))
 
 (defn register-feedtype
   "Registers a feed type by name for creation through Thoonk core"
-  [feedtype type]
+  [feedtype type-constructor]
+  ; wrap c'tor in an anonymous function that creates the redis keys if needed.
   (let [feed-constructor (fn [name config]
-                           (let [config (or config {:type feedtype})]
-                             (create-feed name config)))]
-        (swap! feedtypes assoc feedtype feed-constructor)))
+          (let [ config (or config {:type feedtype})]
+            ; create the main key for the feed if needed
+            (create-feed name config)
+            ; keys for other schemas will be instantiated on first use.
+            (type-constructor name)))]
+    (swap! feedtypes assoc feedtype feed-constructor)))
+
+(defn initialize 
+  "Register the core Thoonk feed types"
+  []
+  (if (empty? @feedtypes)
+      ; initialize the needed feed types. just Feed for now.
+      (register-feedtype :feed make-feed)))
+
