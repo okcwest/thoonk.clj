@@ -135,10 +135,10 @@
           (get (swap! feeds assoc name (feed-constructor name feedtype)) name)))))
 
 (defn create-feed
-  "Creates main key for a new feed structure."
+  "Creates keys for a new feed structure."
   [name config]
     (let [created (= 1 (with-redis (redis/sadd "feeds" name)))]
-      (if created
+      (if created ; if this is new, set up the config keys so we know its type
         (set-config name config true))
       created))
 
@@ -160,7 +160,7 @@
     ; if successful, getting the feed by name should break.
     (let [deleted-feed (try (get-feed name)
                           (catch FeedDoesNotExist f nil))]
-      (nil? deleted-feed)))
+      (nil? deleted-feed))) ; true if retrieve by name failed.
 
 (defn register-feedtype
   "Registers a feed type by name for creation through Thoonk core"

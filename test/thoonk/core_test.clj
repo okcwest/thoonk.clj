@@ -1,13 +1,16 @@
 (ns thoonk.core-test
   (:use clojure.test
-        thoonk.core
-        thoonk.redis-base)
-  (:require [taoensso.carmine :as redis]))
+    thoonk.core
+    thoonk.util
+    thoonk.redis-base)
+  (:require [taoensso.carmine :as redis])
+  (:import (thoonk.exceptions FeedExists
+                              FeedDoesNotExist)))
 
 (deftest test-env-test
   (testing "Checks if Redis is configured correctly for subsequent tests."
     (is (not (nil? (with-redis (redis/info)))))))
-
+    
 (deftest test-empty-get-with-redis
     (testing "Does the with-redis macro produce something appropriate?"
         (is (nil? (with-redis (redis/get "thiskeydoesnotexist"))))))
@@ -43,9 +46,12 @@
 
 (deftest test-feed-create-delete
     (testing "Create a feed and check its existence"
+        (try (delete-feed "nosuchfeed")
+          (catch FeedDoesNotExist f nil)) ; this feed should start out non-existent
         (is (not (feed-exists "nosuchfeed")))
-        (is (create-feed "nosuchfeed" []))
+        (is (create-feed "nosuchfeed" {:type :feed}))
         (is (feed-exists "nosuchfeed"))
         (is (not (nil? (get-feed "nosuchfeed"))))
-        (is (delete-feed "nosuchfeed"))))
+        (is (delete-feed "nosuchfeed"))
+        (is (not (feed-exists "nosuchfeed")))))
 

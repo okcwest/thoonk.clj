@@ -12,4 +12,3 @@
 (defn make-uuid
   []
   (str (java.util.UUID/randomUUID)))
-
