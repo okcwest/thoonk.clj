@@ -58,7 +58,8 @@
               ; WARNING: zadd's args are reversed! this is (zadd key score val)
               (redis/zadd (:feed-ids this) timestamp id)) ; time-order ids.
             (redis/incr (:feed-publishes this)) ; bump the counter
-            (redis/hset (:feed-items this) id item)))) ; push the actual item
+            (redis/hset (:feed-items this) id item)) ; push the actual item
+            id)) ; return the id we published!
     (retract [this id]
       (if (not (nil? (with-redis (redis/zrank (:feed-ids this) id))))
         (with-redis-transaction

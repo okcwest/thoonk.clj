@@ -7,38 +7,37 @@
 
 ; a specific protocol for the queue feed type
 (defprotocol QueueP
-    ; queue-specific function
+    ; queue-specific functions
     (push [this item] [this item priority])
     (pull [this] [this timeout]))
 
-(defrecord Queue [name feed]
-    QueueP ; implementations of queue-specific methods
-      (push [this item priority]
-        (let [id (util/make-uuid)]
+; this record contains top-level aliases for all inherited schemata
+(defrecord Queue [name feed-ids feed-items feed-publish feed-publishes 
+                  feed-retract feed-config feed-edit feed]
+  QueueP ; implementations of queue-specific methods
+    (push [this item priority]
+      (let [id (util/make-uuid)]
         (with-redis-transaction
           (if priority
-            (do
-              (redis/rpush (:feed-ids (:feed this)) id)
-              (redis/hset (:feed-items (:feed this)) id item)
-              (redis/incr (:feed-publishes (:feed this))))
-            (do
-              (redis/lpush (:feed-ids (:feed this)) id)
-              (redis/hset (:feed-items (:feed this)) id item)
-              (redis/incr (:feed-publishes (:feed this))))))))
-        (push [this item]
-            (push this item false))
-        (pull [this timeout] ; blocking pull. waits for an item to appear.
-            (let [result (with-redis (redis/brpop (:feed-ids (:feed this)) timeout))]
-                (if (or (nil? result) (= 0 (count result)))
-                    (throw (Empty.))
-                    (first ; first member of
-                        (last ; all results at tail position
-                          (let [id (nth result 1)]
-                              (with-redis-transaction
-                                  (redis/hget (:feed-items (:feed this)) id)
-                                  (redis/hdel (:feed-items (:feed this)) id))))))))
-        (pull [this] ; no timeout (wait forever)
-            (pull this 0)))
+            (redis/rpush (:feed-ids this) id)
+            (redis/lpush (:feed-ids this) id))
+          (redis/hset (:feed-items this) id item)
+          (redis/incr (:feed-publishes this)))
+      id)) ; return the id we pushed!
+    (push [this item]
+        (push this item false))
+    (pull [this timeout] ; blocking pull. waits for an item to appear.
+        (let [result (with-redis (redis/brpop (:feed-ids this) timeout))]
+            (if (or (nil? result) (= 0 (count result)))
+                (throw (Empty.))
+                (first ; first member of
+                    (last ; all results at tail position
+                      (let [id (nth result 1)]
+                          (with-redis-transaction
+                              (redis/hget (:feed-items this) id)
+                              (redis/hdel (:feed-items this) id))))))))
+    (pull [this] ; no timeout (wait forever)
+        (pull this 0)))
 
 (extend-protocol FeedP 
   ; override the following methods of FeedP when the 1st arg is a Queue
@@ -54,7 +53,7 @@
     ; queue ids are managed with a list, not a sorted set, which means we 
     ; need to override all id manipulations.
     (get-ids [this]
-      (with-redis (redis/lrange (:feed-ids (:feed this)) 0 -1)))
+      (with-redis (redis/lrange (:feed-ids this) 0 -1)))
     (retract [this id]
       ; first check if the id exists, which can't be done by a redis list:
       (let [ids (with-redis (redis/lrange (:feed-ids this) 0 -1))]
@@ -66,7 +65,7 @@
             (util/publish (:feed-retract this) id)))))
     ; if no id specified, pull from the right and wait forever.
     (get-item [this]
-      (pull this 0))
+      (pull this))
     ; we implement just about everything else by handing it off to the encapsulated feed
     (get-item [this id] ; when id is specified we can handle it like the feed.
       (get-item (:feed this) id))
@@ -82,4 +81,10 @@
   ; construct an encapsulated feed BY THE SAME NAME.
   ; this is safe coz no schemas conflict.
   (let [feed (make-feed name)]
-    (Queue. name feed)))
+    (Queue. name
+            ; aliased from feed
+            (:feed-ids feed) (:feed-items feed) (:feed-publish feed) 
+            (:feed-publishes feed) (:feed-retract feed) (:feed-config feed) 
+            (:feed-edit feed) 
+            ; the feed object for delegating methods.
+            feed)))
