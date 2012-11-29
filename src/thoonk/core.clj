@@ -3,7 +3,8 @@
             [thoonk.util :as util])
   (:use [clojure.string :only [join split]] 
         [thoonk.redis-base]
-        [thoonk.feeds.feed])
+        [thoonk.feeds.feed]
+        [thoonk.feeds.queue])
   (:import (thoonk.exceptions FeedExists
                               FeedDoesNotExist
                               Empty
@@ -179,5 +180,6 @@
   []
   (if (empty? @feedtypes)
       ; initialize the needed feed types. just Feed for now.
-      (register-feedtype :feed make-feed)))
+      (register-feedtype :feed make-feed)
+      (register-feedtype :queue make-queue)))
 
