@@ -3,6 +3,7 @@
         [thoonk.core]
         [thoonk.feeds.feed]
         [thoonk.feeds.queue])
+  (:require [thoonk.util :as util])
   (:import (thoonk.exceptions  Empty)))
 
 (deftest test-queue-schemas []
@@ -43,12 +44,11 @@
       (is (= 0 (count (get-ids queue))))
       (is (= 0 (count (get-all queue))))
       ; blocking call should time out appropriately.
-      (let [t0 (.getTime (java.util.Date.))
-            pulled (try (pull queue 5)
-                      (catch Empty e nil)) ; we expect this exception
-            t1 (.getTime (java.util.Date.))
-            elapsed (- t1 t0)]
-        (is (> 6000 elapsed 4000)) ; allow a bit of tolerance
-        (is (nil? pulled)))))
+      (let [t0 (util/get-time)]
+        (is (thrown? Empty (pull queue 1))) ; block while requesting
+        (let [t1 (util/get-time)
+              elapsed (- t1 t0)]
+          ; allow a bit of tolerance on the top side. should never time out early.
+          (is (> 3000 elapsed 1000))))))
   ; clean up
   (delete-feed "testqueue"))

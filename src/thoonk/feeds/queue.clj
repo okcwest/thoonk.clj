@@ -16,16 +16,16 @@
                   feed-retract feed-config feed-edit feed]
   QueueP ; implementations of queue-specific methods
     (push [this item priority]
-      (let [id (util/make-uuid)]
-        (with-redis-transaction
-          (if priority
-            (redis/rpush (:feed-ids this) id)
-            (redis/lpush (:feed-ids this) id))
-          (redis/hset (:feed-items this) id item)
-          (redis/incr (:feed-publishes this)))
-      id)) ; return the id we pushed!
-    (push [this item]
-        (push this item false))
+        (let [id (util/make-uuid)]
+          (with-redis-transaction
+            (if priority
+              (redis/rpush (:feed-ids this) id)
+              (redis/lpush (:feed-ids this) id))
+            (redis/hset (:feed-items this) id item)
+            (redis/incr (:feed-publishes this)))
+        id)) ; return the id we pushed!
+      (push [this item]
+          (push this item false))
     (pull [this timeout] ; blocking pull. waits for an item to appear.
         (let [result (with-redis (redis/brpop (:feed-ids this) timeout))]
             (if (or (nil? result) (= 0 (count result)))
@@ -44,12 +44,13 @@
   Queue
     ; some queue-specific overrides of feed methods
     ; we alias publish to push, for queues.
-    (publish [this item]
-      (publish this item false))
-    (publish [this item args]
-      (if (nil? (:priority args))
-        (push this item) ; default to non-priority
-        (push this item (:priority args))))
+    (publish 
+      ([this item args]
+        (if (nil? (:priority args))
+          (push this item) ; default to non-priority
+          (push this item (:priority args))))
+      ([this item]
+        (push this item false)))
     ; queue ids are managed with a list, not a sorted set, which means we 
     ; need to override all id manipulations.
     (get-ids [this]
@@ -63,12 +64,13 @@
             (redis/zrem (:feed-ids this) id)
             (redis/hdel (:feed-items this) id)
             (util/publish (:feed-retract this) id)))))
-    ; if no id specified, pull from the right and wait forever.
-    (get-item [this]
-      (pull this))
+    (get-item 
+      ; if no id specified, pull from the right and wait forever.
+      ([this]
+        (pull this))
+      ([this id] ; when id is specified we can delegate to the feed.
+        (get-item (:feed this) id)))
     ; we implement just about everything else by handing it off to the encapsulated feed
-    (get-item [this id] ; when id is specified we can handle it like the feed.
-      (get-item (:feed this) id))
     (get-schemas [this]
       (get-schemas (:feed this)))
     (get-channels [this]

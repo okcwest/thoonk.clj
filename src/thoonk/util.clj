@@ -12,3 +12,16 @@
 (defn make-uuid
   []
   (str (java.util.UUID/randomUUID)))
+
+(defn get-time
+  "Get the current time via a Date object."
+  []
+  (.getTime (java.util.Date.)))
+
+(defn parse-int
+  "Null-safe parsing of numeric strings"
+  [number-string]
+  (if (nil? number-string)
+    nil
+    (try (Integer/parseInt number-string)
+      (catch NumberFormatException e nil))))
