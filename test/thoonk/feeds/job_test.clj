@@ -29,8 +29,7 @@
      (is (contains? schemas "feed.running:testjob"))
      (is (contains? schemas "feed.finishes:testjob"))
      (is (contains? schemas "job.finish:testjob"))
-     (is (not (contains? schemas "feed.finish:testjob"))) ; nonexistent schema
-     (is (not (contains? schemas "hullaballoo"))))) ; nonexistent schema
+     (is (not (contains? schemas "feed.position:testjob"))))) ;sorted feed only
   ; clean up
   (delete-feed "testjob"))
 

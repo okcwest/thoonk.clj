@@ -4,6 +4,7 @@
   (:use [clojure.string :only [join split]] 
         [thoonk.redis-base]
         [thoonk.feeds.feed]
+        [thoonk.feeds.sorted-feed]
         [thoonk.feeds.queue]
         [thoonk.feeds.job])
   (:import (thoonk.exceptions FeedExists
@@ -183,6 +184,7 @@
       ; initialize the needed feed types.
       (do
         (register-feedtype :feed make-feed)
+        (register-feedtype :sorted-feed make-sorted-feed)
         (register-feedtype :queue make-queue)
         (register-feedtype :job make-job))))
 
