@@ -55,7 +55,6 @@
                   (redis/hget (:feed-items this) delete-id)
                   (util/publish (:feed-retract this) delete-id))))
             (let [timestamp (.getTime (java.util.Date.))]
-              ; WARNING: zadd's args are reversed! this is (zadd key score val)
               (redis/zadd (:feed-ids this) timestamp id)) ; time-order ids.
             (redis/incr (:feed-publishes this)) ; bump the counter
             (redis/hset (:feed-items this) id item)) ; push the actual item

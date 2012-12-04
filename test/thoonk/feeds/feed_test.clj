@@ -4,7 +4,8 @@
     thoonk.feeds.feed
     thoonk.redis-base)
   (:require [taoensso.carmine :as redis]
-            [thoonk.util :as util]))
+            [thoonk.util :as util])
+  (:import [thoonk.exceptions Empty]))
 
 (deftest test-feed-schemas []
   (testing "Create a feed and check its schemata."
@@ -35,8 +36,8 @@
       (is (= 2 (count (get-ids feed)))) ; should have two now
       (let [allitems (get-all feed)] ; get-all fetches the expected items
         (is (= 2 (count (keys allitems))))
-        (is (some (fn [a] (= "testitem" a)) (vals allitems)))
-        (is (some (fn [a] (= "seconditem" a)) (vals allitems)))) ; no spurious contents by pigeonhole
+        (is (some #{"testitem"} (vals allitems)))
+        (is (some #{"seconditem"} (vals allitems)))) ; no spurious contents by pigeonhole
       (is (= "testitem" (get-item feed))) ; FIFO
       (is (= "testitem" (get-item feed (first (get-ids feed))))) ; items by id
       (is (= "seconditem" (get-item feed (nth (get-ids feed) 1))))))
@@ -57,6 +58,11 @@
         (is (= "testitem" (get-item feed id))) ; verify it's the one we expect
         (retract feed id) ; remove it
         (is (= 1 (count (get-ids feed)))) ; and then there was one
-        (is (= "seconditem" (get-item feed))))))
+        (is (= "seconditem" (get-item feed))))
+      (let [id (first (get-ids feed))] ; get the id of the remaining one
+        (is (= "seconditem" (get-item feed id))) ; verify it's the one we expect
+        (retract feed id) ; remove it
+        (is (= 0 (count (get-ids feed)))) ; and then there was one
+        (is (thrown? Empty (get-item feed))))))
     ; clean up
     (delete-feed "testfeed"))
