@@ -62,7 +62,7 @@
       (let [id (first (get-ids feed))] ; get the id of the remaining one
         (is (= "seconditem" (get-item feed id))) ; verify it's the one we expect
         (retract feed id) ; remove it
-        (is (= 0 (count (get-ids feed)))) ; and then there was one
+        (is (= 0 (count (get-ids feed)))) ; and then there were none
         (is (thrown? Empty (get-item feed))))))
     ; clean up
     (delete-feed "testfeed"))

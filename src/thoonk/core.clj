@@ -57,11 +57,11 @@
   "Defines and initializes a Thoonk listener instance for realtime feeds"
   []
   (let [handlers (atom {})
-        emit (fn [event & args] (apply (event @handlers) args))]
-    (with-redis
-      (-> (redis/with-new-pubsub-listener *redis-conn*
+        emit (fn [event & args] (do (println "Passing" args "to" (event @handlers)) (apply (event @handlers) args)))]
+      (-> (redis/with-new-pubsub-listener *redis-conn* ; this is setting up the listener map
             {"newfeed" (fn [msg channel data]
                          (let [[name] (split data #"\00")]
+                            (prn "Handling a feed creation. Going to pass [\"create\"]" name "to handlers.")
                            (emit "create" name)))
              "delfeed" (fn [msg channel data]
                          (let [[name] (split data #"\00")]
@@ -86,7 +86,7 @@
             (redis/subscribe "newfeed" "delfeed" "conffeed")
             (redis/psubscribe "feed.publish*" "feed.edit*" "feed.retract*" "feed.position*" "job.finish*"))
           ;; attach handlers to listener map
-          (assoc :handlers handlers)))))
+          (assoc :handlers handlers))))
 
 (defn terminate-listener
   [listener]
@@ -94,12 +94,12 @@
 
 (defn register-handler
   [listener name handler]
-  (swap! (listener :handlers) assoc name handler))
+  (swap! (:handlers listener) assoc name handler))
             
 (defn remove-handler
   "Remove a function handler for a Thoonk event"
   [listener name]
-  (swap! (listener :handlers) dissoc name))
+  (swap! (:handlers listener) dissoc name))
 
 (defn feed-exists
   [name]
