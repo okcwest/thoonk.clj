@@ -2,7 +2,8 @@
   (:use clojure.test
     thoonk.core
     thoonk.util
-    thoonk.redis-base)
+    thoonk.redis-base
+    clojure.tools.logging)
   (:require [taoensso.carmine :as redis])
   (:import (thoonk.exceptions FeedExists
                               FeedDoesNotExist)))
@@ -63,13 +64,22 @@
 (defn handle-create
   [name]
   (let [old (or (:created @handled) [])]
-    (println "Called create handler")
+    (debug "Called create handler")
+    ;))
     (swap! handled assoc :created (conj old name))))
+
+(defn handle-config
+  [name]
+  (let [old (or (:configured @handled) [])]
+    (debug "Called config handler")
+    ;))
+    (swap! handled assoc :configured (conj old name))))
 
 (defn handle-delete
   [name]
   (let [old (or (:deleted @handled) [])]
-    (println "Called delete handler")
+    (debug "Called delete handler")
+    ;))
     (swap! handled assoc :deleted (conj old name))))
 
 (deftest test-pub-sub
@@ -79,22 +89,24 @@
     (is (nil? (:deleted @handled)))
     ; set up a listener and register our handlers
     (let [listener (create-listener)]
-      (prn listener)
+      ;(prn listener)
       (is (not (nil? listener)))
+      ;(Thread/sleep 1000) ; sleep through the subscribe announcements
       (register-handler listener "create" handle-create)
       (register-handler listener "delete" handle-delete)
-      ; check out the handlers on the listener
-      (prn (:handlers listener))
-      ; explicitly publish a bogus feed creation
-      (with-redis (redis/publish "newfeed" (str "bogus\00" (make-uuid))))
+      (register-handler listener "config" handle-config)
       ; create a feed
       (create-feed "testfeed" {:type :feed})
-      ; should now have handled a create event with handle-create.
-      ; look for side effects.
-      (is (= ["testfeed"] (:created @handled))))
-      (is (nil? (:deleted @handled)))
+      (Thread/sleep 500) ; give the handler a chance to fire
+      ; should now have handled a create and a config event with handle-create.
+      (is (some #{"testfeed"} (:created @handled)))
+      (is (some #{"testfeed"} (:configured @handled)))
+      (is (not (some #{"testfeed"} (:deleted @handled))))
       ; delete it and make sure that's handled too.
       (delete-feed "testfeed")
-      (is (= ["testfeed"] (:deleted @handled)))))
+      (Thread/sleep 500)
+      (is (some #{"testfeed"} (:deleted @handled)))
+      ; clean up
+      (terminate-listener listener))))
 
 

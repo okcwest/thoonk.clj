@@ -2,7 +2,8 @@
   (:use [clojure.test]
         [thoonk.core]
         [thoonk.feeds.feed]
-        [thoonk.feeds.queue])
+        [thoonk.feeds.queue]
+        [clojure.tools.logging])
   (:require [thoonk.util :as util])
   (:import (thoonk.exceptions  Empty)))
 
@@ -23,23 +24,41 @@
   ; clean up
   (delete-feed "testqueue"))
 
-(deftest test-push-pull-queue []
+(deftest test-push-pull-retract-queue []
   (testing "Read and write with a queue."
     (let [created (create-feed "testqueue" {:type :queue})
-          queue (get-feed "testqueue")]
-      (is (push queue "first-in"))
-      (is (push queue "second-in"))
-      (is (push queue "third-in-priority" true))
+          queue (get-feed "testqueue")
+          first-id (push queue "first-in")
+          second-id (push queue "second-in")
+          third-id (push queue "third-in-priority" true)
+          fourth-id (push queue "fourth-in")]
       ; get the ids and verify the items are as we expect
       (let [ids (get-ids queue)]
+        (is (= 4 (count ids)))
+        ; check the order
+        (is (= fourth-id (nth ids 0)))
+        (is (= second-id (nth ids 1)))
+        (is (= first-id (nth ids 2)))
+        (is (= third-id (nth ids 3))))
+      ; and the values, by random access
+      (is (= "first-in" (get-item queue first-id)))
+      (is (= "second-in" (get-item queue second-id)))
+      (is (= "third-in-priority" (get-item queue third-id)))
+      (is (= "fourth-in" (get-item queue fourth-id)))
+      ; retract an item
+      (retract queue second-id)
+      ; check the ids again
+      (let [ids (get-ids queue)]
         (is (= 3 (count ids)))
-        (is (= "second-in" (get-item queue (nth ids 0))))
-        (is (= "first-in" (get-item queue (nth ids 1))))
-        (is (= "third-in-priority" (get-item queue (nth ids 2)))))
+        ; check the order
+        (is (= fourth-id (nth ids 0)))
+        (is (= first-id (nth ids 1)))
+        (is (= third-id (nth ids 2))))
       ; pull the items
       (is (= "third-in-priority" (pull queue)))
       (is (= "first-in" (pull queue)))
-      (is (= "second-in" (pull queue)))
+      ; second is gone
+      (is (= "fourth-in" (pull queue)))
       ; make sure everything is gone
       (is (= 0 (count (get-ids queue))))
       (is (= 0 (count (get-all queue))))

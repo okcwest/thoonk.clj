@@ -143,7 +143,7 @@
                 (redis/hget (:feed-cancelled this) id)
                 (util/publish (:feed-claimed this) id))]
           { :id id
-            :content (nth (last result) 1) 
+            :content (nth (last result) 1)
             :cancelled (or (util/parse-int (nth (last result) 2)) 0)}))
       ([this]
         (pull this 0))))

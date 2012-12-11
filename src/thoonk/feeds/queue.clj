@@ -1,6 +1,7 @@
 (ns thoonk.feeds.queue
     (:use [thoonk.feeds.feed]
-          [thoonk.redis-base])
+          [thoonk.redis-base]
+          [clojure.tools.logging])
     (:require [taoensso.carmine :as redis]
               [thoonk.util :as util])
     (:import (thoonk.exceptions Empty)))
@@ -58,12 +59,15 @@
     (retract [this id]
       ; first check if the id exists, which can't be done by a redis list:
       (let [ids (with-redis (redis/lrange (:feed-ids this) 0 -1))]
-        (if (some (fn [a] (= id a)) ids)
+        (debug "Trying to remove id" id "from set of ids" ids)
+        (if (some #{id} ids)
           ; found it.
+          (do
+            (debug "Found the id to remove")
           (with-redis-transaction
-            (redis/zrem (:feed-ids this) id)
+            (redis/lrem (:feed-ids this) 1 id)
             (redis/hdel (:feed-items this) id)
-            (util/publish (:feed-retract this) id)))))
+            (util/publish (:feed-retract this) id))))))
     (get-item 
       ; if no id specified, pull from the right and wait forever.
       ([this]

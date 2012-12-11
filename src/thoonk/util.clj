@@ -7,7 +7,8 @@
    Second form allows supply a a separate pipeline to use for
    Redis communication"
   [key items]
-  (redis/publish key (join "\00" items)))
+  {:pre (vector? items)}
+  (redis/publish key (join "\000" items)))
 
 (defn make-uuid
   []

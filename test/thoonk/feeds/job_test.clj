@@ -3,11 +3,52 @@
         [thoonk.core]
         [thoonk.feeds.feed]
         [thoonk.feeds.job]
-        [thoonk.feeds.queue])
+        [thoonk.feeds.queue]
+        [clojure.tools.logging])
   (:require [thoonk.util :as util])
   (:import (thoonk.exceptions Empty
                               JobDoesNotExist
                               InvalidJobState)))
+
+; write some handlers to check the pubsub stuff in-line
+(def handled (atom {})) ; for tracking handled events
+
+; a handler for each of the job channels
+(defn- handle-publish [name item id]
+  (let [old (or (get @handled :published) [])]
+    (debug "Job" item "with id" id "published to" name)
+    (swap! handled assoc :published (conj old [name id item]))))
+
+; as thoonk stands, jobs can't actually be edited, but the channel exists.
+;(defn- handle-edit [name item id]
+;  (let [old (or (get @handled :edited) [])]
+;    (debug "Job" item "with id" id "edited in" name)
+;    (swap! handled assoc :edited (conj old [name id item]))))
+
+; python pubsub ignores claim so we will too for now
+;(defn- handle-claim [name id]
+;  (let [old (or (get @handled :claimed) [])]
+;    (debug "Job with id" id "claimed from" name)
+;    (swap! handled assoc :claimed (conj old [name id]))))
+
+(defn- handle-finish [name id result]
+  (let [old (or (get @handled :finished) [])]
+    (debug "Job with id" id "finished with result" result "in" name)
+    (swap! handled assoc :finished (conj old [name id result]))))
+
+
+; fixture attaches the listener to every run
+(defn listener-fixture [f]
+  (let [listener (create-listener)]
+    (register-handler listener "publish" handle-publish)
+;    (register-handler listener "edit" handle-edit)
+;    (register-handler listener "claim" handle-claim)
+    (register-handler listener "finish" handle-finish)
+    (reset! handled {}) ; empty out the handled map
+    (f) ; run the test function
+    (terminate-listener listener)))
+
+(use-fixtures :each listener-fixture)
 
 (deftest test-job-schemas []
   (testing "Make sure we can create a queue with all expected schemata"
@@ -49,6 +90,9 @@
         (is (= "third job content" (get-item job third-id)))
         ; be nice if an invalid id is requested.
         (is (nil? (get-item job "dne")))
+        ; pick up the publish events
+        (Thread/sleep 500)
+        (is (some #{["testjob" (str first-id) "first job content"]} (get @handled :published)))
         (is (= {:id third-id 
                 :content "third job content" 
                 :cancelled 0} (pull job))) ; 3rd was pushed with priority
@@ -211,9 +255,8 @@
                 :content "first job content" 
                 :cancelled 1} (pull job)))
         ; should be able to finish now. publish this one with a result.
-        ; pubsub tested elsewhere, so publishing a result without failing is 
-        ; enough.
         (is (finish job first-id "result"))
+        (is (some #{["testjob" (str first-id) "result"]} (get @handled :finished)))
         ; should be no more items on the job queue.
         (is (= 0 (count (get-all job)))))))
   ; clean up

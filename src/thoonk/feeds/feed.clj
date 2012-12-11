@@ -1,5 +1,6 @@
 (ns thoonk.feeds.feed
-  (:use [thoonk.redis-base])
+  (:use [thoonk.redis-base]
+        [clojure.tools.logging])
   (:require [taoensso.carmine :as redis]
             [thoonk.util :as util])
   (:import (thoonk.exceptions Empty)))
@@ -46,25 +47,28 @@
               maxlen (with-redis (redis/hget (:feed-config this) "max-length")) 
               delete-ids (if (or (nil? maxlen) (= 0 maxlen)) 
                 [] ; no stale items
-                (with-redis (redis/zrange (:feed-ids this) 0 (- max 0))))]
-          (with-redis-transaction
-            (doseq [delete-id delete-ids]
-              (if (not (= delete-id id)) ; retract any stale items that were there
-                (do
-                  (redis/zrem (:feed-ids this) delete-id)
-                  (redis/hget (:feed-items this) delete-id)
-                  (util/publish (:feed-retract this) delete-id))))
-            (let [timestamp (.getTime (java.util.Date.))]
-              (redis/zadd (:feed-ids this) timestamp id)) ; time-order ids.
-            (redis/incr (:feed-publishes this)) ; bump the counter
-            (redis/hset (:feed-items this) id item)) ; push the actual item
+                (with-redis (redis/zrange (:feed-ids this) 0 (- max 0))))
+              result (last (with-redis-transaction
+                      (doseq [delete-id delete-ids]
+                        (if (not (= delete-id id)) ; retract any stale items that were there
+                          (do
+                            (redis/zrem (:feed-ids this) delete-id)
+                            (redis/hget (:feed-items this) delete-id)
+                            (util/publish (:feed-retract this) [delete-id]))))
+                      (let [timestamp (.getTime (java.util.Date.))]
+                        (redis/zadd (:feed-ids this) timestamp id)) ; time-order ids.
+                      (redis/incr (:feed-publishes this)) ; bump the counter
+                      (redis/hset (:feed-items this) id item)))] ; push actual item
+            (if (< 0 (nth result (- (count result) 3)))
+              (with-redis (util/publish (:feed-publish this) [id item]))
+              (with-redis (util/publish (:feed-edit this) [id item])))
             id)) ; return the id we published!
     (retract [this id]
       (if (not (nil? (with-redis (redis/zrank (:feed-ids this) id))))
         (with-redis-transaction
           (redis/zrem (:feed-ids this) id)
           (redis/hdel (:feed-items this) id)
-          (util/publish (:feed-retract this) id)))))
+          (util/publish (:feed-retract this) [id])))))
 
 (defn ^Feed make-feed
   [name]

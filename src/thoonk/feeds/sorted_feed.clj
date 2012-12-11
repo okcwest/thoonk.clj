@@ -60,7 +60,7 @@
         (redis/incr (:feed-publishes this))
         (redis/hset (:feed-items this) id item)
         (util/publish (:feed-publish this) [id item])
-        (util/publish (:feed-position this) [item "begin:"]))
+        (util/publish (:feed-position this) [id "begin:"]))
       id))
     (edit [this id item]
       (if (not (item-exists this id))

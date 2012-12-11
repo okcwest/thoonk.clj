@@ -1,7 +1,8 @@
 (ns thoonk.core
   (:require [taoensso.carmine :as redis]
             [thoonk.util :as util])
-  (:use [clojure.string :only [join split]] 
+  (:use [clojure.string :only [join split]]
+        [clojure.tools.logging]
         [thoonk.redis-base]
         [thoonk.feeds.feed]
         [thoonk.feeds.sorted-feed]
@@ -18,28 +19,6 @@
 ;; Cached feed instances
 (def feeds (atom {}))
 
-;(def base-schemas #{"feed.ids:" "feed.items:" "feed.publish:" "feed.publishes:" 
-;  "feed.retract:" "feed.config:" "feed.edit:"})
-
-;; we hold the set of schemas centrally, because it can't be pulled from the feed types
-;(def feedtype-schemas (atom {
-;    :feed base-schemas
-;    :queue base-schemas
-;    :sorted_feed (conj base-schemas #{"feed.incr_id:"})
-;    :job (conj base-schemas #{"feed.claimed" "feed.stalled" "feed.running"
-;      "feed.publishes" "feed.cancelled"})}))
-
-;(defn get-schemas
-;  "Fetches all the schemas for a feed by name"
-;  [name]
-;  (let [feedtype (get @feeds name)]
-;    (if (nil? feedtype)
-;      (throw (FeedDoesNotExist.)))
-;    (loop [schemas #{} prefixes (get @feedtype-schemas feedtype)]
-;      (if (or (nil? prefixes) (= 0(count prefixes)))
-;        schemas
-;        (recur (conj schemas (str (first prefixes))) (rest prefixes))))))
-
 (declare initialize) ; registers the feed types. forward-declared for sanity.
 
 ;; UUID identifying this Thoonk JVM instance
@@ -53,44 +32,109 @@
             *redis-conn* (or redis-conn *redis-conn*)]
     ~@body))
 
+(defn- parse-match [match]
+  (let [msg (if (< 0 (count match)) (nth match 0) "")
+        is-pattern (= "pmessage" msg)]
+   ;(debug "Parsing match" match ": is-pattern = " is-pattern)
+  { :msg msg
+    :pattern (if (and is-pattern (< 1 (count match))) (nth match 1) nil)
+    :channel  (if (and is-pattern (< 2 (count match))) 
+              (nth match 2) 
+              (if (< 1 (count match)) 
+                (nth match 1) 
+                ""))
+    :data (if (and is-pattern (< 3 (count match))) 
+              (nth match 3) 
+              (if (< 2 (count match)) 
+                (nth match 2) 
+                ""))}))
+
+; exception-handling wrapper for splitting
+; potential for uncaught exceptions will apparently sink a handler.
+(defn- safe-split [string pattern]
+  (try (split string pattern)
+    (catch Exception e (do 
+      (error "Couldn't split" string ":" (.getMessage e))
+      [string]))))
+
 (defn create-listener
   "Defines and initializes a Thoonk listener instance for realtime feeds"
   []
   (let [handlers (atom {})
-        emit (fn [event & args] (do (println "Passing" args "to" (event @handlers)) (apply (event @handlers) args)))]
+        emit (fn [event & args] (let [handler (get @handlers event)] (if (not (nil? handler)) (apply handler args))))]
       (-> (redis/with-new-pubsub-listener *redis-conn* ; this is setting up the listener map
-            {"newfeed" (fn [msg channel data]
-                         (let [[name] (split data #"\00")]
-                            (prn "Handling a feed creation. Going to pass [\"create\"]" name "to handlers.")
-                           (emit "create" name)))
-             "delfeed" (fn [msg channel data]
-                         (let [[name] (split data #"\00")]
-                           (emit "delete" name)))
-             "conffeed" (fn [msg channel data]
-                          (let [[name] (split data #"\00" 1)]
-                            (emit "config" name)))
-             "feed.publish*" (fn [msg _ channel data]
-                               (let [[id item] (split data #"\00" 1)]
-                                 (emit "publish" (last (split channel #":" 1) item id))))
-             "feed.edit*" (fn [msg _ channel data]
-                            (let [[id item] (split data #"\00" 1)]
-                              (emit "edit" (last (split channel #":" 1)) item id)))
-             "feed.retract*" (fn [msg _ channel data]
-                               (emit "retract" (last (split channel #":" 1)) data))
-             "feed.position*" (fn [msg _ channel data]
-                                (let [[id rel-id] (split data #"\00" 1)]
-                                  (emit "position" (last (split channel #":" 1)) id rel-id)))
-             "job.finish*" (fn [msg _ channel data]
-                             (let [[id result] (split data #"\00" 1)]
-                               (emit "finish" (last (split channel #":" 1)) id result)))}
+            { "newfeed" (fn [match] 
+                          (let [parsed (parse-match match)]
+                            (if (not (= "message" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (first (safe-split (:data parsed) #"\000"))]
+                                ;(debug "Channel match: channel" (:channel parsed) "got name" name)
+                                (emit "create" name)))))
+              "delfeed" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "message" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (first (safe-split (:data parsed) #"\000"))]
+                                ;(debug "Channel match: channel" (:channel parsed) "got name" name)
+                                (emit "delete" name)))))
+              "conffeed" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "message" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (first (safe-split (:data parsed) #"\000"))]
+                                ;(debug "Channel match: channel" (:channel parsed) "got name" name)
+                                (emit "config" name)))))
+              "feed.publish*" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "pmessage" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (last (safe-split (:channel parsed) #":"))
+                                    data (safe-split (:data parsed) #"\000")
+                                    id (if (< 0 (count data)) (nth data 0) nil)
+                                    item (if (< 1 (count data)) (nth data 1) nil)]
+                                (emit "publish" name item id)))))
+              "feed.edit*" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "pmessage" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (last (safe-split (:channel parsed) #":"))
+                                    data (safe-split (:data parsed) #"\000")
+                                    id (if (< 0 (count data)) (nth data 0) nil)
+                                    item (if (< 1 (count data)) (nth data 1) nil)]
+                                (emit "edit" name item id)))))
+              "feed.retract*" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "pmessage" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (last (safe-split (:channel parsed) #":"))
+                                    id (:data parsed)]
+                                (emit "retract" name id)))))
+              "feed.position*" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "pmessage" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (last (safe-split (:channel parsed) #":"))
+                                    data (safe-split (:data parsed) #"\000")
+                                    id (if (< 0 (count data)) (nth data 0) nil)
+                                    pos (if (< 1 (count data)) (nth data 1) nil)]
+                                (emit "position" name id pos)))))
+              "job.finish*" (fn [match]
+                          (let [parsed (parse-match match)]
+                            (if (not (= "pmessage" (:msg parsed)))
+                              (info "Skipping traffic of type" (:msg parsed) "on channel" (:channel parsed))
+                              (let [name (last (safe-split (:channel parsed) #":"))
+                                    data (safe-split (:data parsed) #"\000")
+                                    id (if (< 0 (count data)) (nth data 0) nil)
+                                    result (if (< 1 (count data)) (nth data 1) nil)]
+                                (emit "finish" name id result)))))
+                            }
             (redis/subscribe "newfeed" "delfeed" "conffeed")
             (redis/psubscribe "feed.publish*" "feed.edit*" "feed.retract*" "feed.position*" "job.finish*"))
-          ;; attach handlers to listener map
-          (assoc :handlers handlers))))
+          (assoc :handlers handlers )))) ; attach the handlers to the resulting listener
 
 (defn terminate-listener
   [listener]
-  nil)
+  (redis/close-listener listener))
 
 (defn register-handler
   [listener name handler]
