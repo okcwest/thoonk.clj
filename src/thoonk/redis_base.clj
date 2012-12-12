@@ -17,3 +17,13 @@
      ~@body
      (redis/exec)))
 
+(defmacro with-thoonk
+ "Wrapping Thoonk functions in this macro rebinds the redis connection pool.
+  See carmine/make-conn-pool and carmine/make-conn-spec for creating connection pools"
+ [redis-pool redis-conn & body]
+ `(binding [*redis-pool* (or ~redis-pool *redis-pool*)
+           *redis-conn* (or ~redis-conn *redis-conn*)]
+   ~@body))
+
+
+

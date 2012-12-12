@@ -24,14 +24,6 @@
 ;; UUID identifying this Thoonk JVM instance
 (def uuid (str (java.util.UUID/randomUUID)))
 
-(defmacro with-thoonk
-  "Wrapping Thoonk functions in this macro rebinds the redis connection pool.
-   See carmine/make-conn-pool and carmine/make-conn-spec for creating connection pools"
-  [redis-pool redis-conn & body]
-  (binding [*redis-pool* (or redis-pool *redis-pool*)
-            *redis-conn* (or redis-conn *redis-conn*)]
-    ~@body))
-
 (defn- parse-match [match]
   (let [msg (if (< 0 (count match)) (nth match 0) "")
         is-pattern (= "pmessage" msg)]
@@ -161,8 +153,8 @@
       (doseq [[key value] config]
         (redis/hset (str "feed.config:" name) key value))
       ; type must have a value, so default it to :feed
-      (if (nil? (:type config))
-        (redis/hset (str "feed.config:" name) :type :feed)))
+      (if (nil? (get config "type"))
+        (redis/hset (str "feed.config:" name) "type" "feed")))
     (if new
       (with-redis (util/publish "newfeed" [name uuid])))
     (with-redis (util/publish "conffeed" [name uuid]))))
@@ -172,10 +164,10 @@
   [name]
   (or (get @feeds name) ; try the cache first
     (let [feedtype (or ; what kind of feed should be constructed?
-            (with-redis (redis/hget (str "feed.config:" name) :type)) 
+            (with-redis (redis/hget (str "feed.config:" name) "type")) 
             (throw (FeedDoesNotExist.))) ; die nicely if it isn't there.
           initialized (initialize) ; do this here before we try to get a c'tor
-          feed-constructor (feedtype @feedtypes)]
+          feed-constructor (get @feedtypes feedtype)]
       (if (not feed-constructor) ; unknown feed type? be cool.
           (throw (FeedDoesNotExist.))
           ; call the type-specific wrapper function that will create the type
@@ -214,7 +206,7 @@
   [feedtype type-constructor]
   ; wrap c'tor in an anonymous function that creates the redis keys if needed.
   (let [feed-constructor (fn [name config]
-          (let [ config (or config {:type feedtype})]
+          (let [ config (or config {"type" feedtype})]
             ; create the main key for the feed if needed
             (create-feed name config)
             ; keys for other schemas will be instantiated on first use.
@@ -227,8 +219,8 @@
   (if (empty? @feedtypes)
       ; initialize the needed feed types.
       (do
-        (register-feedtype :feed make-feed)
-        (register-feedtype :sorted-feed make-sorted-feed)
-        (register-feedtype :queue make-queue)
-        (register-feedtype :job make-job))))
+        (register-feedtype "feed" make-feed)
+        (register-feedtype "sorted-feed" make-sorted-feed)
+        (register-feedtype "queue" make-queue)
+        (register-feedtype "job" make-job))))
 
