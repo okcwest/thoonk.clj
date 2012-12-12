@@ -13,4 +13,5 @@
   :aot [#"thoonk.exceptions.*"]
   :source-paths ["src"]
   :test-paths ["test"]
+  :profiles {:dev {:plugins [[jonase/kibit "0.0.4"]]}}
   )
