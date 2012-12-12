@@ -8,7 +8,7 @@
                                 ItemDoesNotExist)))
 
 (defn- item-exists [sfeed id]
-    (< 0 (with-redis (redis/hexists (:feed-items sfeed) id))))
+    (pos? (with-redis (redis/hexists (:feed-items sfeed) id))))
 
 (defn- insert [sfeed item rel-id method]
   "private function for inserting items"
@@ -86,7 +86,7 @@
                             (str pos " is not a valid position argument.")))))
             rel-id (if (= "BEFORE" op) 
                       (subs pos 1 (count pos))
-                      (subs pos 0 (- (count pos) 1)))]
+                      (subs pos 0 (dec (count pos))))]
         (if (not (item-exists this id))
           (throw (ItemDoesNotExist.)))
         (if (not (or  (= "begin" rel-id) 

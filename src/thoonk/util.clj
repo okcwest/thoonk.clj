@@ -22,7 +22,6 @@
 (defn parse-int
   "Null-safe parsing of numeric strings"
   [number-string]
-  (if (nil? number-string)
-    nil
+  (when-not (nil? number-string)
     (try (Integer/parseInt number-string)
       (catch NumberFormatException e nil))))

@@ -29,7 +29,7 @@
           (push this item false))
     (pull [this timeout] ; blocking pull. waits for an item to appear.
         (let [result (with-redis (redis/brpop (:feed-ids this) timeout))]
-            (if (or (nil? result) (= 0 (count result)))
+            (if (or (nil? result) (zero? (count result)))
                 (throw (Empty.))
                 (first ; first member of
                     (last ; all results at tail position
@@ -60,14 +60,13 @@
       ; first check if the id exists, which can't be done by a redis list:
       (let [ids (with-redis (redis/lrange (:feed-ids this) 0 -1))]
         (debug "Trying to remove id" id "from set of ids" ids)
-        (if (some #{id} ids)
+        (when (some #{id} ids)
           ; found it.
-          (do
-            (debug "Found the id to remove")
+          (debug "Found the id to remove")
           (with-redis-transaction
             (redis/lrem (:feed-ids this) 1 id)
             (redis/hdel (:feed-items this) id)
-            (util/publish (:feed-retract this) id))))))
+            (util/publish (:feed-retract this) id)))))
     (get-item 
       ; if no id specified, pull from the right and wait forever.
       ([this]
