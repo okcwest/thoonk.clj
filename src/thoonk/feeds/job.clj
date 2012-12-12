@@ -11,7 +11,7 @@
 
 (defn- job-exists [job id]
   "private method to check if a job id refers to a valid item."
-    (< 0 (with-redis (redis/hexists (:feed-items job) id))))
+    (pos? (with-redis (redis/hexists (:feed-items job) id))))
 
 ; a specific protocol for the job feed type
 (defprotocol JobP
@@ -77,7 +77,7 @@
         "Resubmit a stalled job. Cancelled jobs are re-enqueued without this."
         (if (not (job-exists this id))
           (throw (JobDoesNotExist.)))
-        (if (= 0 (with-redis (redis/sismember (:feed-stalled this) id)))
+        (if (zero? (with-redis (redis/sismember (:feed-stalled this) id)))
           (throw (InvalidJobState.)))
         (let [result
                 (with-redis-transaction
@@ -100,7 +100,7 @@
               claimed (nth (last result) 2)
               stalled (nth (last result) 3)]
             (loop [added 0 ids all]
-              (if (= 0 (count ids))
+              (if (zero? (count ids))
                 added) ; if no more ids to check, return the number added
               (let [id (first ids)
                     unaccounted (not (or (some #{id} avail) (some #{id} claimed) (some #{id} stalled)))]
@@ -126,7 +126,7 @@
                 (let [score (* 1000 (.getTime (java.util.Date.)))]
                   (redis/zadd (:feed-published this) score id)))]
           ; check the zadd to see if this was new.
-          (if (< 0 (last (last result)))
+          (if (pos? (last (last result)))
             (with-redis (util/publish (:feed-publishes this) [id item]))
             (with-redis (util/publish (:feed-edit this) [id item])))
           id))) ; return the id.
@@ -134,7 +134,7 @@
     (pull 
       ([this timeout]
         (let [next-item (with-redis (redis/brpop (:feed-ids this) timeout))
-              id (if (or (nil? next-item) (= 0 (count next-item)))
+              id (if (or (nil? next-item) (zero? (count next-item)))
                 (throw (Empty.))
                 (last next-item)) ; brpop returns [key value]
               result (with-redis-transaction

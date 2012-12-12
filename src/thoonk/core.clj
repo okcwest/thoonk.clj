@@ -22,7 +22,7 @@
 (declare initialize) ; registers the feed types. forward-declared for sanity.
 
 ;; UUID identifying this Thoonk JVM instance
-(def uuid (str (java.util.UUID/randomUUID)))
+(def uuid (util/make-uuid))
 
 (defmacro with-thoonk
   "Wrapping Thoonk functions in this macro rebinds the redis connection pool.
@@ -33,7 +33,7 @@
     ~@body))
 
 (defn- parse-match [match]
-  (let [msg (if (< 0 (count match)) (nth match 0) "")
+  (let [msg (if (pos? (count match)) (nth match 0) "")
         is-pattern (= "pmessage" msg)]
    ;(debug "Parsing match" match ": is-pattern = " is-pattern)
   { :msg msg
@@ -176,7 +176,7 @@
             (throw (FeedDoesNotExist.))) ; die nicely if it isn't there.
           initialized (initialize) ; do this here before we try to get a c'tor
           feed-constructor (feedtype @feedtypes)]
-      (if (not feed-constructor) ; unknown feed type? be cool.
+      (if-not feed-constructor ; unknown feed type? be cool.
           (throw (FeedDoesNotExist.))
           ; call the type-specific wrapper function that will create the type
           (get (swap! feeds assoc name (feed-constructor name feedtype)) name)))))
@@ -221,14 +221,13 @@
             (type-constructor name)))]
     (swap! feedtypes assoc feedtype feed-constructor)))
 
-(defn initialize 
+(defn initialize
   "Register the core Thoonk feed types"
   []
-  (if (empty? @feedtypes)
-      ; initialize the needed feed types.
-      (do
-        (register-feedtype :feed make-feed)
-        (register-feedtype :sorted-feed make-sorted-feed)
-        (register-feedtype :queue make-queue)
-        (register-feedtype :job make-job))))
+  (when (empty? @feedtypes)
+    ; initialize the needed feed types.
+    (register-feedtype :feed make-feed)
+    (register-feedtype :sorted-feed make-sorted-feed)
+    (register-feedtype :queue make-queue)
+    (register-feedtype :job make-job)))
 

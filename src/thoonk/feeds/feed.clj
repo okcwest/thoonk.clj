@@ -31,7 +31,7 @@
       (with-redis (redis/zrange (:feed-ids this) 0 -1)))
     (get-item [this]
       (let [ids (with-redis (redis/zrange (:feed-ids this) 0 0))
-            id (if (< 0 (count ids)) (first ids) (throw (Empty.)))]
+            id (if (pos? (count ids)) (first ids) (throw (Empty.)))]
         (get-item this id)))
     (get-item [this id]
       (with-redis (redis/hget (:feed-items this) id)))
@@ -44,22 +44,21 @@
     (publish
       [this item args]
         (let [id (:id args)
-              maxlen (with-redis (redis/hget (:feed-config this) "max-length")) 
-              delete-ids (if (or (nil? maxlen) (= 0 maxlen)) 
+              maxlen (with-redis (redis/hget (:feed-config this) "max-length"))
+              delete-ids (if (or (nil? maxlen) (zero? maxlen))
                 [] ; no stale items
                 (with-redis (redis/zrange (:feed-ids this) 0 (- max 0))))
               result (last (with-redis-transaction
                       (doseq [delete-id delete-ids]
-                        (if (not (= delete-id id)) ; retract any stale items that were there
-                          (do
-                            (redis/zrem (:feed-ids this) delete-id)
-                            (redis/hget (:feed-items this) delete-id)
-                            (util/publish (:feed-retract this) [delete-id]))))
+                        (when (not= delete-id id) ; retract any stale items that were there
+                          (redis/zrem (:feed-ids this) delete-id)
+                          (redis/hget (:feed-items this) delete-id)
+                          (util/publish (:feed-retract this) [delete-id])))
                       (let [timestamp (.getTime (java.util.Date.))]
                         (redis/zadd (:feed-ids this) timestamp id)) ; time-order ids.
                       (redis/incr (:feed-publishes this)) ; bump the counter
                       (redis/hset (:feed-items this) id item)))] ; push actual item
-            (if (< 0 (nth result (- (count result) 3)))
+            (if (pos? (nth result (- (count result) 3)))
               (with-redis (util/publish (:feed-publish this) [id item]))
               (with-redis (util/publish (:feed-edit this) [id item])))
             id)) ; return the id we published!
