@@ -216,20 +216,10 @@
 (defn initialize
   "Register the core Thoonk feed types"
   []
-<<<<<<< HEAD
-  (if (empty? @feedtypes)
-      ; initialize the needed feed types.
-      (do
-        (register-feedtype "feed" make-feed)
-        (register-feedtype "sorted-feed" make-sorted-feed)
-        (register-feedtype "queue" make-queue)
-        (register-feedtype "job" make-job))))
-=======
   (when (empty? @feedtypes)
     ; initialize the needed feed types.
-    (register-feedtype :feed make-feed)
-    (register-feedtype :sorted-feed make-sorted-feed)
-    (register-feedtype :queue make-queue)
-    (register-feedtype :job make-job)))
->>>>>>> 66ef9affdb9e10644fa255da50671f6be170c50a
+    (register-feedtype "feed" make-feed)
+    (register-feedtype "sorted-feed" make-sorted-feed)
+    (register-feedtype "queue" make-queue)
+    (register-feedtype "job" make-job)))
 
