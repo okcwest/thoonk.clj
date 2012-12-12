@@ -41,7 +41,7 @@
 
 (deftest test-sfeed-schemas []
   (testing "Make sure we can create a queue with all expected schemata"
-    (let [created (create-feed "testsfeed" {:type :sorted-feed})
+    (let [created (create-feed "testsfeed" {"type" "sorted-feed"})
           sfeed (get-feed "testsfeed")
           schemas (get-schemas sfeed)]
      (is sfeed) ; verify we got something
@@ -60,7 +60,7 @@
 
 (deftest test-sfeed-publish-retract []
   (testing "Insert, check, and remove elements."
-  (let [created (create-feed "testsfeed" {:type :sorted-feed})
+  (let [created (create-feed "testsfeed" {"type" "sorted-feed"})
         sfeed (get-feed "testsfeed")
         schemas (get-schemas sfeed)]
     (is sfeed) ; did we get a feed?
@@ -110,7 +110,7 @@
 
 (deftest test-sfeed-move-edit []
   (testing "Insert, check, and remove elements."
-  (let [created (create-feed "testsfeed" {:type :sorted-feed})
+  (let [created (create-feed "testsfeed" {"type" "sorted-feed"})
         sfeed (get-feed "testsfeed")
         schemas (get-schemas sfeed)]
     (is sfeed) ; did we get a feed?

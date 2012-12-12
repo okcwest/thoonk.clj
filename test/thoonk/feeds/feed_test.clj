@@ -40,7 +40,7 @@
 
 (deftest test-feed-schemas []
   (testing "Create a feed and check its schemata."
-   (let [ created (create-feed "testfeed" {:type :feed})
+   (let [ created (create-feed "testfeed" {"type" "feed"})
           feed (get-feed "testfeed")
           schemas (get-schemas feed)]
     (is feed) ; verify we got something
@@ -57,7 +57,7 @@
 
 (deftest test-feed-read-write []
   (testing "Put and get some items in a feed."
-    (let [created (create-feed "testfeed" {:type :feed})
+    (let [created (create-feed "testfeed" {"type" "feed"})
           feed (get-feed "testfeed")]
       (is (= [] (get-ids feed))) ; feed should start out empty
       (let [first-id (publish feed "testitem")] ; put an item
@@ -88,7 +88,7 @@
 
 (deftest test-feed-retract []
   (testing "Retract an item and see that it becomes gone"
-    (let [created (create-feed "testfeed" {:type :feed})
+    (let [created (create-feed "testfeed" {"type" "feed"})
           feed (get-feed "testfeed")]
       (is (= [] (get-ids feed)))
       (is (publish feed "testitem"))

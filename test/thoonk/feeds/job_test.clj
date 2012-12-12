@@ -52,7 +52,7 @@
 
 (deftest test-job-schemas []
   (testing "Make sure we can create a queue with all expected schemata"
-    (let [created (create-feed "testjob" {:type :job})
+    (let [created (create-feed "testjob" {"type" "job"})
           job (get-feed "testjob")
           schemas (get-schemas job)]
      (is job) ; verify we got something
@@ -76,7 +76,7 @@
 
 (deftest test-job-push-get-pull []
   (testing "Read and write jobs"
-    (let [created (create-feed "testjob" {:type :job})
+    (let [created (create-feed "testjob" {"type" "job"})
           job (get-feed "testjob")]
       (is job)
       (let [first-id (push job "first job content")
@@ -106,7 +106,7 @@
 
 (deftest test-job-stall-retry []
   (testing "Postpone and re-enable a job"
-    (let [created (create-feed "testjob" {:type :job})
+    (let [created (create-feed "testjob" {"type" "job"})
           job (get-feed "testjob")]
       (is job)
       (let [first-id (push job "first job content")
@@ -157,7 +157,7 @@
 
 (deftest test-job-cancel []
   (testing "Cancel a job's execution attempt"
-    (let [created (create-feed "testjob" {:type :job})
+    (let [created (create-feed "testjob" {"type" "job"})
           job (get-feed "testjob")]
       (is job)
       (let [first-id (push job "first job content")
@@ -203,7 +203,7 @@
 
 (deftest test-job-finish []
   (testing "Complete a job and verify that it is gone"
-    (let [created (create-feed "testjob" {:type :job})
+    (let [created (create-feed "testjob" {"type" "job"})
           job (get-feed "testjob")]
       (is job)
       (let [first-id (push job "first job content")

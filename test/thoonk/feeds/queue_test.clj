@@ -9,7 +9,7 @@
 
 (deftest test-queue-schemas []
   (testing "Make sure we can create a queue with all expected schemata"
-    (let [created (create-feed "testqueue" {:type :queue})
+    (let [created (create-feed "testqueue" {"type" "queue"})
           queue (get-feed "testqueue")
           schemas (get-schemas queue)]
      (is queue) ; verify we got something
@@ -26,7 +26,7 @@
 
 (deftest test-push-pull-retract-queue []
   (testing "Read and write with a queue."
-    (let [created (create-feed "testqueue" {:type :queue})
+    (let [created (create-feed "testqueue" {"type" "queue"})
           queue (get-feed "testqueue")
           first-id (push queue "first-in")
           second-id (push queue "second-in")
