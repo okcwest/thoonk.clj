@@ -1,10 +1,10 @@
-(defproject thoonk "0.1.0"
+(defproject org.clojars.chandralytical/thoonk "0.1.0"
   :description "Thoonk client implemented in Clojure"
   :url "https://github.com/okcwest/thoonk.clj"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.4.0"]
-                 [com.taoensso/carmine "0.11.3"]
+                 [com.taoensso/carmine "1.4.0"]
                  [log4j/log4j "1.2.16" :exclusions [javax.mail/mail
                                                     javax.jms/jms
                                                     com.sun.jdmk/jmxtools
