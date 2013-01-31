@@ -110,8 +110,8 @@
           job (get-feed "testjob")]
       (is job)
       (let [first-id (push job "first job content")
-            second-id (push job"second job content")
-            third-id (push job"third job content" true)]
+            second-id (push job "second job content")
+            third-id (push job "third job content" true)]
         (is first-id)
         (is second-id)
         (is third-id)
