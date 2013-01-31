@@ -1,4 +1,4 @@
-(defproject org.clojars.chandralytical/thoonk "0.1.0"
+(defproject org.clojars.chandralytical/thoonk "0.1.1"
   :description "Thoonk client implemented in Clojure"
   :url "https://github.com/okcwest/thoonk.clj"
   :license {:name "Eclipse Public License"
